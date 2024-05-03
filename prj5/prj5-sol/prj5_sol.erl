@@ -11,13 +11,14 @@
 %% The skeleton file is distributed with all tests deactivated
 %% by being enclosed within if(false) ... endif directives.
 
--if(false).  
+  
 -define(test_rec_poly_eval, enabled).
 -define(test_non_rec_poly_eval, enabled).
 -define(test_tuple_poly_eval, enabled).
 -define(test_assoc_lookup, enabled).
 -define(test_id_poly_eval, enabled).
 -define(test_server_fn, enabled).
+-if(false).
 -endif.
 
 
@@ -35,8 +36,17 @@
 %
 % *Restriction*: Your implementation is required to be tail-recursive.
 % *Hint*: Use an auxiliary function.
-rec_poly_eval(_Coeffs, _X) ->
-    'TODO'.
+
+% rec_poly_eval(_Coeffs, _X) ->
+%     'TODO'.
+
+rec_poly_eval(Coeffs, X) ->
+    rec_poly_eval(Coeffs, X, 0, 0).
+
+rec_poly_eval([], _X, Result, _Power) ->
+    Result;
+rec_poly_eval([C | Coeffs], X, Result, Power) ->
+    rec_poly_eval(Coeffs, X, Result + C * math:pow(X, Power), Power + 1).
 
 
 -ifdef(test_rec_poly_eval).
@@ -67,8 +77,13 @@ rec_poly_eval_test_() -> [
 % *Hint*: Use a list comprehension to compute the terms of the
 % polynomial (using list:zip, list:seq() and math:pow())
 % followed by a lists:foldl() to sum the terms.
-non_rec_poly_eval(_Coeffs, _X) ->
-    'TODO'.
+
+% non_rec_poly_eval(_Coeffs, _X) ->
+%     'TODO'.
+
+non_rec_poly_eval(Coeffs, X) ->
+    Terms = [C * math:pow(X, I) || {C, I} <- lists:zip(Coeffs, lists:seq(0, length(Coeffs) - 1))],
+    lists:foldl(fun(Term, Acc) -> Term + Acc end, 0, Terms).
 
 
 -ifdef(test_non_rec_poly_eval).
@@ -98,9 +113,13 @@ non_rec_poly_eval_test_() -> [
 %
 % *Hint*: Your solution can strip the coefficient out of tuple-pair
 % and then call any one of the solutions to the two previous exercises.
-tuple_poly_eval(_TupleCoeffs, _X) ->
-    'TODO'.
 
+% tuple_poly_eval(_TupleCoeffs, _X) ->
+%     'TODO'.
+
+tuple_poly_eval(TupleCoeffs, X) ->
+    Coeffs = [C || {_, C} <- TupleCoeffs],
+    non_rec_poly_eval(Coeffs, X).
 
 -ifdef(test_tuple_poly_eval).
 tuple_poly_eval_test_() -> [
@@ -128,16 +147,27 @@ tuple_poly_eval_test_() -> [
 %
 % Hint: implement by wrapping lists:keyfind() and using a case
 % to pattern-match on the result.
-assoc_lookup(_Key, _Assoc, _DefaultFn) ->
-    'TODO'.
+
+% assoc_lookup(_Key, _Assoc, _DefaultFn) ->
+%     'TODO'.
+
+assoc_lookup(Key, Assoc, DefaultFn) ->
+    case lists:keyfind(Key, 1, Assoc) of
+        false -> DefaultFn();
+        {_, Value} -> Value
+    end.
     
 
 % Lookup the Value of Key in assoc list Assoc list containing
 % { Key, Value } pairs.  If not found, return 0.
 %
 % Hint: wrap assoc_lookup.
-assoc_lookup_0(_Key, _Assoc) ->
-    'TODO'.
+
+% assoc_lookup_0(_Key, _Assoc) ->
+%     'TODO'.
+
+assoc_lookup_0(Key, Assoc) ->
+    assoc_lookup(Key, Assoc, fun() -> 0 end).
 				     
 % Lookup the Value of Key in assoc list Assoc list containing
 % { Key, Value } pairs.  If not found, throw an exception
@@ -146,8 +176,12 @@ assoc_lookup_0(_Key, _Assoc) ->
 % format("key ~p not found", [Key]) ).
 %
 % Hint: wrap assoc_lookup.
-assoc_lookup_throw(_Key, _Assoc) ->
-    'TODO'.
+
+% assoc_lookup_throw(_Key, _Assoc) ->
+%     'TODO'.
+
+assoc_lookup_throw(Key, Assoc) ->
+    assoc_lookup(Key, Assoc, fun() -> throw({not_found, format("key ~p not found", [Key])}) end).
 
 -ifdef(test_assoc_lookup).
 assoc_lookup_test_() -> 
@@ -187,8 +221,15 @@ assoc_lookup_test_() ->
 % of numbers and then call any one of the solutions to the two
 % previous exercises.  Use a local auxiliary function to convert
 % an element of IdCoeffs to a number.
-id_poly_eval(_Assoc, _IdCoeffs, _X) ->
-    'TODO'.
+
+% id_poly_eval(_Assoc, _IdCoeffs, _X) ->
+%     'TODO'.
+
+id_poly_eval(Assoc, IdCoeffs, X) ->
+    Terms = lists:map(fun({num, C}) -> C;
+                         ({id, Atom}) -> assoc_lookup_0(Atom, Assoc)
+                      end, IdCoeffs),
+    rec_poly_eval(Terms, X).
 
 
 -ifdef(test_id_poly_eval).
@@ -238,9 +279,20 @@ id_poly_eval_test_() ->
 %      to log an error on standard error and recurse with both Assoc and
 %      Coeffs unchanged.
 
-server_fn(_Assoc, _Coeffs) ->
-    'TODO'.
-			
+server_fn(Assoc, Coeffs) ->
+    receive
+        {PidOfClient,stop} -> PidOfClient!{self(), stopped};
+
+        {PidOfClient,set_assoc,Assoc1} -> PidOfClient!{self(), set_assoc}, server_fn(Assoc1, Coeffs);
+
+        {PidOfClient,set_coeffs,Coeffs_1} -> PidOfClient!{self(), set_coeffs}, server_fn(Assoc, Coeffs_1);
+
+        {PidOfClient,eval,X} -> Result = id_poly_eval(Assoc, Coeffs, X), PidOfClient!{self(), eval, round(Result)}, server_fn(Assoc, Coeffs);
+
+        Message -> io:format(standard_error, "Message is Unknown!! :  ~p~n", [Message]), server_fn(Assoc, Coeffs)
+    end.
+
+
 -ifdef(test_server_fn).
 
 server_set_assoc(Pid, Assoc) ->
